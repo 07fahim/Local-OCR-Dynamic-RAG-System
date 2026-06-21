@@ -1,0 +1,29 @@
+# ============================================================
+#  Local OCR & Dynamic RAG System — Python dependencies
+#  Versions are pinned for reproducibility. After your first
+#  successful run, regenerate exact pins with:
+#    pip freeze > requirements.lock.txt
+# ============================================================
+
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+jinja2==3.1.5
+python-dotenv==1.0.1
+pydantic==2.10.4
+
+# --- OCR (Surya, local) ---
+surya-ocr==0.6.13
+pypdfium2==4.30.0        # PDF -> image rendering (no system Poppler needed)
+Pillow==10.4.0
+
+# --- Embeddings: BGE-M3, local ---
+sentence-transformers==3.3.1
+
+# --- Vector store ---
+chromadb==0.5.23
+
+# --- Answer generation ---
+# Fully local via Ollama (https://ollama.com) using the stdlib HTTP client —
+# no Python package needed. Install Ollama and run: ollama pull qwen2.5:7b

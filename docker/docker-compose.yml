@@ -1,0 +1,38 @@
+# Optional convenience runner. The system also runs without Docker via:
+#   pip install -r requirements.txt && uvicorn backend.main:app
+#
+# Build context is the project root so the Dockerfile can COPY ./backend.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OCR_LANGS=${OCR_LANGS:-bn,en}
+      - LLM_MODE=${LLM_MODE:-local}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - CHROMA_DIR=/app/data/chroma_db
+      - SQLITE_PATH=/app/data/ingestion.db
+      - UPLOAD_DIR=/app/data/uploads
+    depends_on:
+      - ollama
+    volumes:
+      # Persist vector store, SQLite log, uploads, and the HF/Surya model cache.
+      - ../data:/app/data
+      - hf_cache:/app/.cache/huggingface
+
+  # Fully-local answer generation. After the stack is up, pull the model once:
+  #   docker compose exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  hf_cache:
+  ollama_models:

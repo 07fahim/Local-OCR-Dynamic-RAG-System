@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local OCR &amp; Dynamic RAG System</title>
+  <style>
+    :root { --bd:#d0d7de; --bg:#f6f8fa; --ac:#0969da; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, "Noto Sans Bengali", Arial, sans-serif; margin:0; background:var(--bg); color:#1f2328; }
+    header { background:#1f2328; color:#fff; padding:16px 24px; }
+    header h1 { font-size:18px; margin:0; }
+    header small { color:#9aa4ad; }
+    main { max-width:980px; margin:0 auto; padding:24px; display:grid; gap:24px; }
+    .card { background:#fff; border:1px solid var(--bd); border-radius:8px; padding:20px; }
+    .card h2 { margin:0 0 14px; font-size:15px; }
+    label { display:block; font-size:13px; margin:10px 0 4px; font-weight:600; }
+    input, select, textarea, button { font:inherit; padding:8px 10px; border:1px solid var(--bd); border-radius:6px; width:100%; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+    button { background:var(--ac); color:#fff; border:none; cursor:pointer; font-weight:600; margin-top:14px; }
+    button:hover { background:#0860ca; }
+    pre { background:#0d1117; color:#e6edf3; padding:14px; border-radius:6px; overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+    .answer { background:#eef6ff; border:1px solid #b6dafe; border-radius:6px; padding:14px; white-space:pre-wrap; }
+    .src { border:1px solid var(--bd); border-radius:6px; padding:10px; margin-top:10px; font-size:13px; }
+    .src .meta { color:#57606a; font-size:12px; margin-bottom:6px; }
+    .warn { background:#fff8c5; border:1px solid #eac54f; padding:8px 10px; border-radius:6px; font-size:13px; margin-top:10px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { border:1px solid var(--bd); padding:6px 8px; text-align:left; }
+    th { background:var(--bg); }
+    .muted { color:#57606a; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Local OCR &amp; Dynamic RAG System</h1>
+    <small>Local OCR (Surya) + BGE-M3 embeddings + ChromaDB hybrid search &middot; Bangla / English</small>
+  </header>
+
+  <main>
+    <!-- UPLOAD -->
+    <section class="card">
+      <h2>1 &middot; Upload a document (PDF or image)</h2>
+      <form id="uploadForm">
+        <label>File</label>
+        <input type="file" name="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.webp" required />
+        <div class="row">
+          <div>
+            <label>Document type (manual metadata)</label>
+            <input type="text" id="document_type" placeholder="invoice / report / letter / form / other" value="other" />
+          </div>
+          <div>
+            <label>Document date (manual metadata)</label>
+            <input type="date" id="document_date" />
+          </div>
+        </div>
+        <button type="submit">Upload &amp; process locally</button>
+      </form>
+      <div id="uploadStatus" class="muted" style="margin-top:10px;"></div>
+      <pre id="uploadResult" style="display:none;"></pre>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="card">
+      <h2>2 &middot; Search (hybrid: manual filters + semantic query)</h2>
+      <form id="searchForm">
+        <label>Natural-language query (Bangla or English)</label>
+        <textarea id="query" rows="2" placeholder="e.g. আমের দাম কত? / What is the invoice total?" required></textarea>
+        <div class="row3">
+          <div>
+            <label>Language filter</label>
+            <select id="language">
+              <option value="">any</option>
+              <option value="bn">bn</option>
+              <option value="en">en</option>
+              <option value="mixed">mixed</option>
+            </select>
+          </div>
+          <div>
+            <label>Document type filter</label>
+            <input type="text" id="f_document_type" placeholder="(optional)" />
+          </div>
+          <div>
+            <label>Top-K</label>
+            <input type="number" id="top_k" value="5" min="1" max="20" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Date from</label>
+            <input type="date" id="date_from" />
+          </div>
+          <div>
+            <label>Date to</label>
+            <input type="date" id="date_to" />
+          </div>
+        </div>
+        <button type="submit">Search</button>
+      </form>
+      <div id="searchStatus" class="muted" style="margin-top:10px;"></div>
+      <div id="answerBox" style="display:none; margin-top:14px;">
+        <strong>Answer</strong> <span id="answerMode" class="muted"></span>
+        <div class="answer" id="answer"></div>
+        <div id="warn"></div>
+        <div id="filtersApplied" class="muted" style="margin-top:8px;"></div>
+        <h3 style="font-size:13px; margin:14px 0 4px;">Sources</h3>
+        <div id="sources"></div>
+      </div>
+    </section>
+
+    <!-- DOCUMENTS -->
+    <section class="card">
+      <h2>3 &middot; Ingested documents</h2>
+      <button type="button" id="refreshDocs" style="width:auto;">Refresh</button>
+      <div id="docsTable" style="margin-top:12px;"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    // ---- Upload ----
+    $("uploadForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = $("file").files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("document_type", $("document_type").value || "other");
+      if ($("document_date").value) fd.append("document_date", $("document_date").value);
+      $("uploadStatus").textContent = "Processing locally (OCR -> chunk -> embed)... this can take a while for scans.";
+      $("uploadResult").style.display = "none";
+      try {
+        const r = await fetch("/upload", { method: "POST", body: fd });
+        const j = await r.json();
+        $("uploadStatus").textContent = r.ok ? "Done." : "Error.";
+        $("uploadResult").style.display = "block";
+        $("uploadResult").textContent = JSON.stringify(j, null, 2);
+        loadDocs();
+      } catch (err) {
+        $("uploadStatus").textContent = "Request failed: " + err;
+      }
+    });
+
+    // ---- Search ----
+    $("searchForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const body = {
+        query: $("query").value,
+        top_k: parseInt($("top_k").value || "5", 10),
+        filters: {
+          language: $("language").value || null,
+          document_type: $("f_document_type").value || null,
+          date_from: $("date_from").value || null,
+          date_to: $("date_to").value || null,
+        },
+      };
+      $("searchStatus").textContent = "Searching...";
+      $("answerBox").style.display = "none";
+      try {
+        const r = await fetch("/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) { $("searchStatus").textContent = "Error: " + (j.detail || r.status); return; }
+        $("searchStatus").textContent = "";
+        $("answerBox").style.display = "block";
+        $("answerMode").textContent = "(mode: " + j.answer_mode + ", " + j.chunks_retrieved + " chunks)";
+        $("answer").textContent = j.answer;
+        $("warn").innerHTML = j.warning ? '<div class="warn">' + j.warning + "</div>" : "";
+        $("filtersApplied").textContent = "Filters applied: " + JSON.stringify(j.filters_applied);
+        $("sources").innerHTML = (j.sources || []).map((s, i) =>
+          '<div class="src"><div class="meta">[' + (i + 1) + '] ' + s.filename +
+          ' &middot; page ' + s.page_number + ' &middot; lang ' + s.language +
+          ' &middot; type ' + (s.document_type || '-') +
+          ' &middot; date ' + (s.document_date || '-') +
+          (s.distance != null ? ' &middot; dist ' + s.distance.toFixed(4) : '') +
+          '</div>' + escapeHtml(s.chunk_text) + '</div>'
+        ).join("");
+      } catch (err) {
+        $("searchStatus").textContent = "Request failed: " + err;
+      }
+    });
+
+    // ---- Documents ----
+    async function loadDocs() {
+      try {
+        const r = await fetch("/documents");
+        const j = await r.json();
+        const rows = (j.documents || []).map((d) =>
+          "<tr><td>" + d.filename + "</td><td>" + (d.document_type || "-") +
+          "</td><td>" + (d.document_date || "-") + "</td><td>" + (d.page_count ?? "-") +
+          "</td><td>" + (d.chunk_count ?? "-") + "</td><td>" + (d.languages_detected || []).join(",") +
+          "</td><td>" + d.status + "</td></tr>"
+        ).join("");
+        $("docsTable").innerHTML = j.total
+          ? "<table><thead><tr><th>File</th><th>Type</th><th>Date</th><th>Pages</th><th>Chunks</th><th>Langs</th><th>Status</th></tr></thead><tbody>" + rows + "</tbody></table>"
+          : '<div class="muted">No documents ingested yet.</div>';
+      } catch (err) {
+        $("docsTable").textContent = "Failed to load: " + err;
+      }
+    }
+    function escapeHtml(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+    $("refreshDocs").addEventListener("click", loadDocs);
+    loadDocs();
+  </script>
+</body>
+</html>

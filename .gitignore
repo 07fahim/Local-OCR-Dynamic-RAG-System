@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Local data / models (regenerated at runtime)
+data/chroma_db/
+data/ingestion.db
+data/uploads/
+
+# Surya / HF model cache (large, downloaded on first run)
+.cache/
+*.safetensors
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Keep sample docs and the folder structure
+!data/sample_docs/
